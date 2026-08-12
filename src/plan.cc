@@ -138,6 +138,18 @@ std::size_t SynchronousLevels(std::span<const Round> rounds) {
   return result;
 }
 
+template <class Operation>
+void AppendBatch(std::vector<Operation> &destination,
+                 std::span<const Operation> operations, Primitive primitive,
+                 std::vector<PrimitiveBatch> &batches) {
+  if (operations.empty())
+    return;
+  const Index offset = CheckedIndex(destination.size(), "operation offset");
+  destination.insert(destination.end(), operations.begin(), operations.end());
+  batches.push_back(
+      {primitive, offset, CheckedIndex(operations.size(), "operation count")});
+}
+
 std::vector<DependencyLevel>
 BuildDependencyLevels(std::size_t node_count, std::size_t edge_count,
                       std::size_t branch_count,
@@ -486,6 +498,40 @@ Plan MakePlan(std::span<const std::int64_t> input,
         operation.tape =
             CheckedIndex(plan.num_compressions_++, "compression tape slot");
       }
+    }
+  }
+
+  if (plan.uses_dependency_levels_) {
+    for (const DependencyLevel &level : plan.dependency_levels_) {
+      AppendBatch(plan.rakes_, std::span<const Rake>(level.rakes),
+                  Primitive::kRake, plan.primitive_batches_);
+      AppendBatch(plan.branch_combinations_,
+                  std::span<const BranchCombination>(
+                      level.branch_combinations),
+                  Primitive::kBranchCombination, plan.primitive_batches_);
+      AppendBatch(plan.branch_absorptions_,
+                  std::span<const BranchAbsorption>(level.branch_absorptions),
+                  Primitive::kBranchAbsorption, plan.primitive_batches_);
+      AppendBatch(plan.compressions_,
+                  std::span<const Compression>(level.compressions),
+                  Primitive::kCompression, plan.primitive_batches_);
+    }
+  } else {
+    for (const Round &round : plan.rounds_) {
+      AppendBatch(plan.rakes_, std::span<const Rake>(round.rakes),
+                  Primitive::kRake, plan.primitive_batches_);
+      for (const auto &stage : round.branch_reduction_stages) {
+        AppendBatch(plan.branch_combinations_,
+                    std::span<const BranchCombination>(stage),
+                    Primitive::kBranchCombination,
+                    plan.primitive_batches_);
+      }
+      AppendBatch(plan.branch_absorptions_,
+                  std::span<const BranchAbsorption>(round.branch_absorptions),
+                  Primitive::kBranchAbsorption, plan.primitive_batches_);
+      AppendBatch(plan.compressions_,
+                  std::span<const Compression>(round.compressions),
+                  Primitive::kCompression, plan.primitive_batches_);
     }
   }
   return plan;

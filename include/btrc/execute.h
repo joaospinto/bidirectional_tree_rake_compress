@@ -13,40 +13,23 @@ namespace btrc {
 // The runtime, rather than each numerical application, owns traversal order.
 template <class Dispatcher>
 void Contract(const Plan &plan, Dispatcher &dispatcher) {
-  if (plan.uses_dependency_levels()) {
-    for (const DependencyLevel &level : plan.dependency_levels()) {
-      if (!level.rakes.empty())
-        dispatcher.Rake(std::span<const btrc::Rake>(level.rakes));
-      if (!level.branch_combinations.empty()) {
-        dispatcher.CombineBranches(
-            std::span<const BranchCombination>(level.branch_combinations));
-      }
-      if (!level.branch_absorptions.empty()) {
-        dispatcher.AbsorbBranches(
-            std::span<const BranchAbsorption>(level.branch_absorptions));
-      }
-      if (!level.compressions.empty()) {
-        dispatcher.Compress(std::span<const Compression>(level.compressions));
-      }
-    }
-    return;
-  }
-  for (const Round &round : plan.rounds()) {
-    if (!round.rakes.empty())
-      dispatcher.Rake(std::span<const btrc::Rake>(round.rakes));
-    for (const auto &stage : round.branch_reduction_stages) {
-      if (!stage.empty()) {
-        dispatcher.CombineBranches(
-            std::span<const BranchCombination>(stage));
-      }
-    }
-    if (!round.branch_absorptions.empty()) {
+  for (const PrimitiveBatch &batch : plan.primitive_batches()) {
+    switch (batch.primitive) {
+    case Primitive::kRake:
+      dispatcher.Rake(plan.rakes().subspan(batch.offset, batch.count));
+      break;
+    case Primitive::kBranchCombination:
+      dispatcher.CombineBranches(
+          plan.branch_combinations().subspan(batch.offset, batch.count));
+      break;
+    case Primitive::kBranchAbsorption:
       dispatcher.AbsorbBranches(
-          std::span<const BranchAbsorption>(round.branch_absorptions));
-    }
-    if (!round.compressions.empty()) {
+          plan.branch_absorptions().subspan(batch.offset, batch.count));
+      break;
+    case Primitive::kCompression:
       dispatcher.Compress(
-          std::span<const Compression>(round.compressions));
+          plan.compressions().subspan(batch.offset, batch.count));
+      break;
     }
   }
 }
@@ -54,27 +37,20 @@ void Contract(const Plan &plan, Dispatcher &dispatcher) {
 // Application-level recovery: restore one output for every eliminated node.
 template <class Dispatcher>
 void Expand(const Plan &plan, Dispatcher &dispatcher) {
-  if (plan.uses_dependency_levels()) {
-    for (std::size_t level_index = plan.dependency_levels().size();
-         level_index-- > 0;) {
-      const DependencyLevel &level = plan.dependency_levels()[level_index];
-      if (!level.compressions.empty()) {
-        dispatcher.ExpandCompressions(
-            std::span<const Compression>(level.compressions));
-      }
-      if (!level.rakes.empty())
-        dispatcher.ExpandRakes(std::span<const btrc::Rake>(level.rakes));
-    }
-    return;
-  }
-  for (std::size_t round_index = plan.rounds().size(); round_index-- > 0;) {
-    const Round &round = plan.rounds()[round_index];
-    if (!round.compressions.empty()) {
+  for (std::size_t index = plan.primitive_batches().size(); index-- > 0;) {
+    const PrimitiveBatch &batch = plan.primitive_batches()[index];
+    switch (batch.primitive) {
+    case Primitive::kRake:
+      dispatcher.ExpandRakes(plan.rakes().subspan(batch.offset, batch.count));
+      break;
+    case Primitive::kCompression:
       dispatcher.ExpandCompressions(
-          std::span<const Compression>(round.compressions));
+          plan.compressions().subspan(batch.offset, batch.count));
+      break;
+    case Primitive::kBranchCombination:
+    case Primitive::kBranchAbsorption:
+      break;
     }
-    if (!round.rakes.empty())
-      dispatcher.ExpandRakes(std::span<const btrc::Rake>(round.rakes));
   }
 }
 
@@ -82,47 +58,25 @@ void Expand(const Plan &plan, Dispatcher &dispatcher) {
 // reductions and absorptions, unlike application-level expansion.
 template <class Dispatcher>
 void Reverse(const Plan &plan, Dispatcher &dispatcher) {
-  if (plan.uses_dependency_levels()) {
-    for (std::size_t level_index = plan.dependency_levels().size();
-         level_index-- > 0;) {
-      const DependencyLevel &level = plan.dependency_levels()[level_index];
-      if (!level.compressions.empty()) {
-        dispatcher.ReverseCompressions(
-            std::span<const Compression>(level.compressions));
-      }
-      if (!level.branch_absorptions.empty()) {
-        dispatcher.ReverseAbsorbBranches(
-            std::span<const BranchAbsorption>(level.branch_absorptions));
-      }
-      if (!level.branch_combinations.empty()) {
-        dispatcher.ReverseCombineBranches(
-            std::span<const BranchCombination>(level.branch_combinations));
-      }
-      if (!level.rakes.empty())
-        dispatcher.ReverseRakes(std::span<const btrc::Rake>(level.rakes));
-    }
-    return;
-  }
-  for (std::size_t round_index = plan.rounds().size(); round_index-- > 0;) {
-    const Round &round = plan.rounds()[round_index];
-    if (!round.compressions.empty()) {
-      dispatcher.ReverseCompressions(
-          std::span<const Compression>(round.compressions));
-    }
-    if (!round.branch_absorptions.empty()) {
+  for (std::size_t index = plan.primitive_batches().size(); index-- > 0;) {
+    const PrimitiveBatch &batch = plan.primitive_batches()[index];
+    switch (batch.primitive) {
+    case Primitive::kRake:
+      dispatcher.ReverseRakes(plan.rakes().subspan(batch.offset, batch.count));
+      break;
+    case Primitive::kBranchCombination:
+      dispatcher.ReverseCombineBranches(
+          plan.branch_combinations().subspan(batch.offset, batch.count));
+      break;
+    case Primitive::kBranchAbsorption:
       dispatcher.ReverseAbsorbBranches(
-          std::span<const BranchAbsorption>(round.branch_absorptions));
+          plan.branch_absorptions().subspan(batch.offset, batch.count));
+      break;
+    case Primitive::kCompression:
+      dispatcher.ReverseCompressions(
+          plan.compressions().subspan(batch.offset, batch.count));
+      break;
     }
-    for (std::size_t stage_index = round.branch_reduction_stages.size();
-         stage_index-- > 0;) {
-      const auto &stage = round.branch_reduction_stages[stage_index];
-      if (!stage.empty()) {
-        dispatcher.ReverseCombineBranches(
-            std::span<const BranchCombination>(stage));
-      }
-    }
-    if (!round.rakes.empty())
-      dispatcher.ReverseRakes(std::span<const btrc::Rake>(round.rakes));
   }
 }
 

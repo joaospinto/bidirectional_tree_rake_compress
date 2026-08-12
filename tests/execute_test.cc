@@ -1,9 +1,13 @@
 #include "btrc/execute.h"
 
 #include <cstdint>
+#include <numeric>
+#include <random>
 #include <span>
 #include <stdexcept>
 #include <vector>
+
+#include "tests/test_trees.h"
 
 namespace {
 
@@ -63,12 +67,86 @@ private:
 };
 
 int main() {
-  const btrc::Plan plan =
-      btrc::MakePlan(std::vector<std::int64_t>{-1, 0, 0, 1, 1, 3, 2});
-  SubtreeSumDispatcher dispatcher(plan, {1, 2, 3, 4, 5, 6, 7});
-  btrc::Contract(plan, dispatcher);
-  Check(dispatcher.Root(plan.root()) == 28);
-  dispatcher.SeedRoot(plan.root());
-  btrc::Expand(plan, dispatcher);
-  Check((dispatcher.outputs() == std::vector<int>{28, 17, 10, 10, 5, 6, 7}));
+  {
+    const btrc::Plan plan =
+        btrc::MakePlan(std::vector<std::int64_t>{-1, 0, 0, 1, 1, 3, 2});
+    SubtreeSumDispatcher dispatcher(plan, {1, 2, 3, 4, 5, 6, 7});
+    btrc::Contract(plan, dispatcher);
+    Check(dispatcher.Root(plan.root()) == 28);
+    dispatcher.SeedRoot(plan.root());
+    btrc::Expand(plan, dispatcher);
+    Check((dispatcher.outputs() ==
+           std::vector<int>{28, 17, 10, 10, 5, 6, 7}));
+  }
+
+  // The adversarial delayed-star family selects earliest-start dependency
+  // levels rather than structural rounds. Exercise that representation through
+  // the same public traversal API.
+  {
+    const std::vector<std::int64_t> parents =
+        btrc_test::DelayedStar(6, 16);
+    const btrc::Plan plan = btrc::MakePlan(parents);
+    Check(plan.uses_dependency_levels());
+    std::vector<int> values(parents.size(), 1);
+    std::vector<int> expected(values);
+    for (std::size_t node = parents.size(); node-- > 1;)
+      expected[static_cast<std::size_t>(parents[node])] += expected[node];
+    SubtreeSumDispatcher dispatcher(plan, values);
+    btrc::Contract(plan, dispatcher);
+    Check(dispatcher.Root(plan.root()) == expected[plan.root()]);
+    dispatcher.SeedRoot(plan.root());
+    btrc::Expand(plan, dispatcher);
+    Check(dispatcher.outputs() == expected);
+  }
+
+  // Exercise arbitrary node numbering rather than only topological parent
+  // arrays. Integer inputs make the contraction and the reference comparison
+  // exact.
+  std::mt19937 generator(42);
+  for (const std::size_t node_count : {3, 7, 16, 31, 64}) {
+    for (int repetition = 0; repetition < 8; ++repetition) {
+      std::vector<std::int64_t> ordered_parents(node_count, -1);
+      for (std::size_t child = 1; child < node_count; ++child) {
+        std::uniform_int_distribution<std::size_t> parent(0, child - 1);
+        ordered_parents[child] =
+            static_cast<std::int64_t>(parent(generator));
+      }
+
+      std::vector<btrc::Index> permutation(node_count);
+      std::iota(permutation.begin(), permutation.end(), btrc::Index{0});
+      std::shuffle(permutation.begin(), permutation.end(), generator);
+      std::vector<btrc::Index> inverse(node_count);
+      for (std::size_t new_node = 0; new_node < node_count; ++new_node)
+        inverse[permutation[new_node]] = static_cast<btrc::Index>(new_node);
+
+      std::vector<std::int64_t> parents(node_count, -1);
+      std::vector<int> values(node_count);
+      std::vector<int> expected_ordered(node_count);
+      for (std::size_t old_node = 0; old_node < node_count; ++old_node) {
+        const btrc::Index new_node = inverse[old_node];
+        values[new_node] = static_cast<int>(old_node % 11) - 5;
+        if (old_node != 0) {
+          parents[new_node] = inverse[static_cast<std::size_t>(
+              ordered_parents[old_node])];
+        }
+      }
+      for (std::size_t old_node = node_count; old_node-- > 0;) {
+        expected_ordered[old_node] += values[inverse[old_node]];
+        if (old_node != 0) {
+          expected_ordered[static_cast<std::size_t>(
+              ordered_parents[old_node])] += expected_ordered[old_node];
+        }
+      }
+
+      const btrc::Plan plan = btrc::MakePlan(parents);
+      SubtreeSumDispatcher dispatcher(plan, values);
+      btrc::Contract(plan, dispatcher);
+      Check(dispatcher.Root(plan.root()) == expected_ordered[0]);
+      dispatcher.SeedRoot(plan.root());
+      btrc::Expand(plan, dispatcher);
+      for (std::size_t old_node = 0; old_node < node_count; ++old_node)
+        Check(dispatcher.outputs()[inverse[old_node]] ==
+              expected_ordered[old_node]);
+    }
+  }
 }

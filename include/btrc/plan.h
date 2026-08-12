@@ -55,6 +55,23 @@ struct DependencyLevel {
   std::vector<Compression> compressions;
 };
 
+enum class Primitive : std::uint32_t {
+  kRake,
+  kBranchCombination,
+  kBranchAbsorption,
+  kCompression,
+};
+
+// One conflict-free numerical launch in contraction order. The offset and
+// count select a contiguous range from the corresponding operation array on
+// Plan. Device backends can upload these arrays without reconstructing the
+// scheduler's chosen representation.
+struct PrimitiveBatch {
+  Primitive primitive;
+  Index offset;
+  Index count;
+};
+
 struct PlanStatistics {
   std::size_t nodes = 0;
   std::size_t edges = 0;
@@ -86,6 +103,17 @@ public:
   std::span<const DependencyLevel> dependency_levels() const {
     return dependency_levels_;
   }
+  std::span<const Rake> rakes() const { return rakes_; }
+  std::span<const BranchCombination> branch_combinations() const {
+    return branch_combinations_;
+  }
+  std::span<const BranchAbsorption> branch_absorptions() const {
+    return branch_absorptions_;
+  }
+  std::span<const Compression> compressions() const { return compressions_; }
+  std::span<const PrimitiveBatch> primitive_batches() const {
+    return primitive_batches_;
+  }
 
 private:
   friend Plan MakePlan(std::span<const std::int64_t>, std::optional<Index>);
@@ -95,6 +123,11 @@ private:
   std::vector<Index> edge_children_;
   std::vector<Round> rounds_;
   std::vector<DependencyLevel> dependency_levels_;
+  std::vector<Rake> rakes_;
+  std::vector<BranchCombination> branch_combinations_;
+  std::vector<BranchAbsorption> branch_absorptions_;
+  std::vector<Compression> compressions_;
+  std::vector<PrimitiveBatch> primitive_batches_;
   Index root_ = 0;
   std::size_t num_branches_ = 0;
   std::size_t num_branch_combinations_ = 0;

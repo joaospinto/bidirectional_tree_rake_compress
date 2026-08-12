@@ -14,12 +14,18 @@ cc_library(
 
 cc_test(
     name = "plan_test",
-    srcs = ["tests/plan_test.cc"],
+    srcs = [
+        "tests/plan_test.cc",
+        "tests/test_trees.h",
+    ],
     deps = [":btrc"],
 )
 
 cc_test(
     name = "execute_test",
-    srcs = ["tests/execute_test.cc"],
+    srcs = [
+        "tests/execute_test.cc",
+        "tests/test_trees.h",
+    ],
     deps = [":btrc"],
 )

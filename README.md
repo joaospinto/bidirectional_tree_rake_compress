@@ -20,13 +20,13 @@ compression, and recovery operations. `btrc::Contract`, `btrc::Expand`, and
 complete numerical contraction, including sibling reductions, and is intended
 for gradients of scalar reductions such as log likelihoods.
 
-The initial implementation includes the deterministic rake–compress planner,
-order-preserving balanced sibling reductions, generic forward/recovery/reverse
-traversals, and CPU tests. The next scheduler milestone is to port the
-readiness-weighted dependency-level representation from
-[`jax-bidirectional-tree-rake-compress`](https://github.com/joaospinto/jax_bidirectional_tree_rake_compress),
-then attach CUDA and Metal dispatchers without moving numerical algebras into
-this repository.
+The implementation includes the deterministic rake–compress planner,
+order-preserving readiness-weighted sibling reductions, generic
+forward/recovery/reverse traversals, adversarial depth tests, and the adaptive
+choice between structural rounds and earliest-start dependency levels. A plan
+also exposes one flattened sequence of conflict-free primitive batches, so CPU,
+CUDA, and Metal consumers share the scheduler's representation instead of
+reconstructing it in each numerical package.
 
 ## Build
 
@@ -34,9 +34,8 @@ this repository.
 bazel test //...
 ```
 
-The project uses Bazel modules and C++20. CUDA and Metal targets will remain
-separate platform-compatible targets so ordinary host tests do not require an
-accelerator toolchain.
+The project uses Bazel modules and C++20. Accelerator kernels remain in the
+numerical packages: this repository owns only topology planning and traversal.
 
 ## License
 
