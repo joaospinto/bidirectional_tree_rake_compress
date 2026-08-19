@@ -2,8 +2,7 @@
 
 Native, topology-independent planning and bidirectional execution for
 rake–compress tree contraction. The package is the reusable layer shared by
-CUDA, Metal, and CPU numerical applications; it contains no HMM,
-phylogenetics, or optimal-control algebra.
+CUDA, Metal, and CPU numerical applications.
 
 The public split is deliberate:
 
